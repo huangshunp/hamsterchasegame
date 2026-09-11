@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Hamster Classroom Adventure</title>
+<style>
+:root{--ink:#4b392f;--panel:rgba(255,255,255,.9);--shadow:rgba(70,48,32,.2)}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#f4eee5;font-family:Arial,Helvetica,sans-serif;color:var(--ink)}
+body{display:flex;align-items:center;justify-content:center}
+#shell{width:min(100vw,1180px);aspect-ratio:16/9;position:relative;overflow:hidden;border-radius:22px;background:#c8edff;box-shadow:0 18px 55px var(--shadow)}
+canvas{width:100%;height:100%;display:block;touch-action:none}
+#hud{position:absolute;inset:0;pointer-events:none}
+.hudBox{position:absolute;top:12px;background:var(--panel);border-radius:16px;padding:8px 12px;font-weight:900;box-shadow:0 5px 15px var(--shadow);backdrop-filter:blur(4px)}
+#lifeBox{left:12px}
+#levelBox{left:50%;transform:translateX(-50%)}
+#countBox{right:12px}
+#starsBox{right:12px;top:56px}
+#soundBtn,#resetBtn{pointer-events:auto;position:absolute;bottom:14px;border:0;border-radius:14px;padding:9px 13px;background:#fff;font-weight:900;color:var(--ink);box-shadow:0 5px 14px var(--shadow);cursor:pointer}
+#soundBtn{left:12px}#resetBtn{right:12px}
+#chargeWrap{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);width:min(48%,480px);height:22px;background:rgba(255,255,255,.9);border-radius:999px;padding:4px;box-shadow:0 5px 14px var(--shadow)}
+#chargeFill{height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,#8dd6b2,#ffd86b,#f39a9a)}
+#message{position:absolute;left:50%;top:78px;transform:translateX(-50%);font-size:22px;font-weight:900;text-shadow:0 2px 0 #fff}
+#overlay,#levelComplete,#gameComplete{position:absolute;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:linear-gradient(rgba(255,250,235,.95),rgba(232,247,255,.96));padding:26px;text-align:center}
+#levelComplete,#gameComplete{display:none}
+.card{width:min(720px,92%);background:rgba(255,255,255,.94);border-radius:26px;padding:26px;box-shadow:0 18px 50px rgba(70,48,32,.18)}
+.hero{font-size:72px}
+h1{margin:6px 0 10px;font-size:clamp(30px,5vw,54px)}
+p{line-height:1.5;font-weight:700}
+.btn{border:0;border-radius:18px;padding:13px 24px;font-size:18px;font-weight:900;background:#ffd86b;color:var(--ink);box-shadow:0 7px 0 #d1a845;cursor:pointer}
+#mobileHint{display:none;position:absolute;left:50%;bottom:52px;transform:translateX(-50%);background:rgba(255,255,255,.88);padding:7px 12px;border-radius:999px;font-size:12px;font-weight:900}
+@media(max-width:820px),(pointer:coarse){
+  #shell{width:100vw;border-radius:0}
+  .hudBox{top:6px;padding:6px 8px;font-size:12px}
+  #starsBox{top:40px}
+  #message{top:60px;font-size:16px}
+  #chargeWrap{bottom:8px;width:55%}
+  #soundBtn,#resetBtn{bottom:44px;padding:7px 10px}
+  #mobileHint{display:block}
+}
+</style>
+</head>
+<body>
+<div id="shell">
+  <canvas id="game" width="1280" height="720" aria-label="Hamster Classroom Adventure"></canvas>
+  <div id="hud">
+    <div class="hudBox" id="lifeBox">❤️❤️❤️</div>
+    <div class="hudBox" id="levelBox">LEVEL 1 — School Supplies</div>
+    <div class="hudBox" id="countBox">Cheese Words: 0 / 10</div>
+    <div class="hudBox" id="starsBox">⭐ Golden Stars: 0</div>
+    <div id="message"></div>
+    <button id="soundBtn">🔊 REPLAY</button>
+    <button id="resetBtn">RESET</button>
+    <div id="mobileHint">Hold screen to charge · release to jump</div>
+    <div id="chargeWrap"><div id="chargeFill"></div></div>
+  </div>
+
+  <div id="overlay">
+    <div class="card">
+      <div class="hero">🐹🧀</div>
+      <h1>Hamster Classroom Adventure</h1>
+      <p>Run through the classroom world, jump over obstacles and monsters, and collect 10 English cheese words in each level.</p>
+      <p><b>Hold SPACE</b> to charge · <b>Release</b> to jump<br>On mobile: hold the game screen and release.</p>
+      <button class="btn" id="startBtn">START GAME</button>
+    </div>
+  </div>
+
+  <div id="levelComplete">
+    <div class="card">
+      <div class="hero">✨🐹✨</div>
+      <h1 id="levelTitle">LEVEL COMPLETE!</h1>
+      <p id="rewardText"></p>
+      <button class="btn" id="nextBtn">NEXT LEVEL</button>
+    </div>
+  </div>
+
+  <div id="gameComplete">
+    <div class="card">
+      <div class="hero">🏆🐹👑</div>
+      <h1>CLASSROOM MASTER!</h1>
+      <p>You cleared all classroom missions.</p>
+      <button class="btn" id="againBtn">PLAY AGAIN</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const W=canvas.width,H=canvas.height,GROUND=610;
+const lifeBox=document.getElementById('lifeBox'),levelBox=document.getElementById('levelBox'),countBox=document.getElementById('countBox'),starsBox=document.getElementById('starsBox');
+const chargeFill=document.getElementById('chargeFill'),messageEl=document.getElementById('message');
+const overlay=document.getElementById('overlay'),levelComplete=document.getElementById('levelComplete'),gameComplete=document.getElementById('gameComplete');
+const rewardText=document.getElementById('rewardText');
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),rand=(a,b)=>a+Math.random()*(b-a),choose=a=>a[Math.floor(Math.random()*a.length)];
+const levels=[
+ {name:'LEVEL 1 — School Supplies',words:['pen','pencil','ruler','eraser','book','notebook','crayon','marker','school bag','pencil case'],speed:260,monsterRate:.0020,obstacleRate:.0028,reward:'🎒 Backpack unlocked!'},
+ {name:'LEVEL 2 — The Classroom',words:['chair','desk','board','classroom','teacher','student','bookcase','computer','door','window'],speed:300,monsterRate:.0028,obstacleRate:.0034,reward:'🧢 Explorer Hat unlocked!'},
+ {name:'LEVEL 3 — Classroom Challenge',words:['sharpener','exercise book','paper','picture','clock','map','scissors','glue','desk','chair'],speed:340,monsterRate:.0036,obstacleRate:.0040,reward:'⭐ Star Badge unlocked!'}
+];
+let audioCtx=null;
+function ensureAudio(){if(!audioCtx){const AC=window.AudioContext||window.webkitAudioContext;if(AC)audioCtx=new AC()}if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume()}
+function tone(f,d=.08,type='sine',vol=.035){ensureAudio();if(!audioCtx)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain(),n=audioCtx.currentTime;o.type=type;o.frequency.value=f;g.gain.setValueAtTime(.0001,n);g.gain.exponentialRampToValueAtTime(vol,n+.01);g.gain.exponentialRampToValueAtTime(.0001,n+d);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(n+d+.03)}
+function speak(t){if(!('speechSynthesis'in window))return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang='en-US';u.rate=.84;speechSynthesis.speak(u)}catch(e){}}
+const state={running:false,level:0,lives:3,count:0,stars:0,charging:false,charge:0,last:0,scroll:0,lastWord:'',msg:'',msgT:0,invuln:0,obstacles:[],monsters:[],cheeses:[],particles:[],door:null,spawnDistance:0,goldenTask:null};
+const hamster={x:270,y:GROUND-68,w:78,h:62,vy:0,jumping:false};
+function hud(){lifeBox.textContent='❤️'.repeat(state.lives)+'🤍'.repeat(3-state.lives);levelBox.textContent=levels[state.level].name;countBox.textContent=`Cheese Words: ${state.count} / 10`;starsBox.textContent=`⭐ Golden Stars: ${state.stars}`;messageEl.textContent=state.msg}
+function resetLevel(){state.lives=3;state.count=0;state.obstacles=[];state.monsters=[];state.cheeses=[];state.particles=[];state.door=null;state.scroll=0;state.spawnDistance=0;state.invuln=0;state.goldenTask=null;hamster.y=GROUND-hamster.h;hamster.vy=0;hamster.jumping=false;state.running=true;hud()}
+function startGame(){state.level=0;state.stars=0;overlay.style.display='none';gameComplete.style.display='none';levelComplete.style.display='none';resetLevel()}
+function nextLevel(){state.level++;levelComplete.style.display='none';if(state.level>=levels.length){state.running=false;gameComplete.style.display='flex';return}resetLevel()}
+function showMsg(t,d=1){state.msg=t;state.msgT=d;hud()}
+function addParticle(x,y,c='#ffe36e'){for(let i=0;i<18;i++){let a=Math.random()*Math.PI*2,s=80+Math.random()*180;state.particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-80,life:.6+Math.random()*.5,c})}}
+function spawnObstacle(){
+ const types=[{w:60,h:38},{w:80,h:70},{w:95,h:110}];const t=choose(types);
+ state.obstacles.push({x:W+100,y:GROUND-t.h,w:t.w,h:t.h,type:Math.floor(Math.random()*4)});
+}
+function spawnMonster(){
+ const kind=Math.floor(Math.random()*3);
+ if(kind===0)state.monsters.push({x:W+100,y:GROUND-50,w:58,h:50,kind,vx:0,phase:0});
+ if(kind===1)state.monsters.push({x:W+100,y:GROUND-55,w:58,h:50,kind,vx:0,phase:Math.random()*6});
+ if(kind===2)state.monsters.push({x:W+100,y:GROUND-150,w:58,h:50,kind,vx:0,phase:Math.random()*6});
+}
+function spawnCheese(){
+ if(state.count>=10)return;
+ const word=levels[state.level].words[state.count % levels[state.level].words.length];
+ const golden=(state.count>0 && state.count%3===0 && !state.goldenTask);
+ if(golden){
+   const wrongPool=levels[state.level].words.filter(w=>w!==word);const opts=[word,choose(wrongPool),choose(wrongPool)].sort(()=>Math.random()-.5);
+   state.goldenTask={word,opts};
+   speak(word);showMsg('Listen! Find the word.',1.2);
+   const baseX=W+120;
+   opts.forEach((w,i)=>state.cheeses.push({x:baseX+i*170,y:GROUND-110-(i%2)*50,w:120,h:50,word:w,golden:true,collected:false}));
+ }else{
+   state.cheeses.push({x:W+120,y:GROUND-rand(80,180),w:120,h:48,word,golden:false,collected:false});
+ }
+}
+function startCharge(){if(!state.running||hamster.jumping)return;state.charging=true;state.charge=0}
+function releaseCharge(){if(!state.charging||!state.running)return;state.charging=false;const c=clamp(state.charge,0,1);hamster.vy=-(530+Math.pow(c,1.35)*520);hamster.jumping=true;state.charge=0;chargeFill.style.width='0%';tone(420+c*300)}
+function hit(a,b){return a.x<a.x+a.w && a.x+a.w>b.x && a.x<b.x+b.w && a.y+a.h>b.y && a.y<b.y+b.h}
+function rects(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y}
+function damage(){
+ if(state.invuln>0)return;state.lives--;state.invuln=1.0;showMsg('OUCH! -1 ❤️',.9);tone(180,.12,'triangle',.04);if(state.lives<=0){state.running=false;setTimeout(()=>{showMsg('TRY AGAIN',1);resetLevel()},900)}hud()
+}
+function collectCheese(c){
+ if(c.collected)return;
+ if(c.golden){
+   if(c.word===state.goldenTask.word){state.stars++;state.count++;state.lastWord=c.word;speak(c.word);showMsg('GOLDEN! +1 ⭐',1);addParticle(c.x,c.y,'#ffe45c')}
+   else{showMsg('Wrong word!',.8);tone(180,.1,'triangle');}
+   state.cheeses.forEach(x=>{if(x.golden)x.collected=true});state.goldenTask=null;
+ }else{
+   c.collected=true;state.count++;state.lastWord=c.word;speak(c.word);showMsg(c.word,1);addParticle(c.x,c.y);tone(720,.08);setTimeout(()=>tone(960,.1),70)
+ }
+ hud();
+ if(state.count>=10&&!state.door){showMsg('10 / 10! Find the classroom door!',1.5);state.door={x:W+500,y:GROUND-150,w:90,h:150}}
+}
+function update(dt){
+ if(!state.running)return;
+ const lv=levels[state.level],speed=lv.speed;state.scroll+=speed*dt;state.spawnDistance+=speed*dt;
+ if(state.charging&&!hamster.jumping){state.charge=clamp(state.charge+dt*.55,0,1);chargeFill.style.width=(state.charge*100)+'%'}
+ if(hamster.jumping){hamster.vy+=1650*dt;hamster.y+=hamster.vy*dt;if(hamster.y+hamster.h>=GROUND){hamster.y=GROUND-hamster.h;hamster.vy=0;hamster.jumping=false}}
+ if(state.spawnDistance>160){state.spawnDistance=0;if(Math.random()<.48)spawnObstacle();if(Math.random()<.42)spawnMonster();if(Math.random()<.40)spawnCheese()}
+ state.invuln=Math.max(0,state.invuln-dt);
+ for(const o of state.obstacles)o.x-=speed*dt;
+ for(const m of state.monsters){m.x-=speed*dt;m.phase+=dt*3;if(m.kind===1)m.y=GROUND-55-Math.abs(Math.sin(m.phase))*70;if(m.kind===2)m.y=GROUND-150+Math.sin(m.phase)*18}
+ for(const c of state.cheeses)c.x-=speed*dt;
+ if(state.door)state.door.x-=speed*dt;
+ const hr={x:hamster.x-hamster.w*.36,y:hamster.y+6,w:hamster.w*.72,h:hamster.h-8};
+ for(const m of state.monsters){if(rects(hr,m))damage()}
+ for(const c of state.cheeses){if(!c.collected&&rects(hr,c))collectCheese(c)}
+ if(state.door&&rects(hr,state.door)){state.running=false;rewardText.textContent=levels[state.level].reward;levelComplete.style.display='flex'}
+ state.obstacles=state.obstacles.filter(o=>o.x>-150);state.monsters=state.monsters.filter(m=>m.x>-120);state.cheeses=state.cheeses.filter(c=>!c.collected&&c.x>-150);
+ for(const p of state.particles){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=300*dt;p.life-=dt}
+ state.particles=state.particles.filter(p=>p.life>0);
+ state.msgT=Math.max(0,state.msgT-dt);if(state.msgT<=0&&state.msg){state.msg='';hud()}
+}
+function rr(x,y,w,h,r,fill){ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fillStyle=fill;ctx.fill()}
+function drawBg(){
+ const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#bfeaff');g.addColorStop(.65,'#edf9ff');g.addColorStop(.66,'#b9df93');g.addColorStop(1,'#91c66d');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ ctx.fillStyle='rgba(255,255,255,.75)';for(let i=0;i<4;i++){let x=((i*360-state.scroll*.12)%(W+500)+W+500)%(W+500)-120;ctx.beginPath();ctx.arc(x,120+i*18,32,0,6.28);ctx.arc(x+40,105+i*18,42,0,6.28);ctx.arc(x+85,120+i*18,31,0,6.28);ctx.fill()}
+ ctx.fillStyle='#d6b489';for(let i=0;i<8;i++){let x=((i*220-state.scroll*.45)%(W+260)+W+260)%(W+260)-80;ctx.fillRect(x,GROUND-165,16,165);ctx.fillStyle='#7fbd75';ctx.beginPath();ctx.arc(x+8,GROUND-170,50,0,6.28);ctx.fill();ctx.fillStyle='#d6b489'}
+ ctx.fillStyle='#79b966';ctx.fillRect(0,GROUND,W,H-GROUND);ctx.fillStyle='#c99563';ctx.fillRect(0,GROUND+18,W,H-GROUND-18);
+}
+function drawHamster(){
+ if(state.invuln>0&&Math.floor(state.invuln*12)%2===0)return;
+ const x=hamster.x+hamster.w/2,y=hamster.y+hamster.h/2;ctx.save();ctx.translate(x,y);
+ ctx.fillStyle='#d89e67';ctx.beginPath();ctx.ellipse(0,4,34,29,0,0,6.28);ctx.fill();ctx.fillStyle='#f2d0a8';ctx.beginPath();ctx.ellipse(6,8,20,18,0,0,6.28);ctx.fill();
+ ctx.fillStyle='#c98657';ctx.beginPath();ctx.arc(-22,-23,11,0,6.28);ctx.arc(21,-23,11,0,6.28);ctx.fill();ctx.fillStyle='#f3b1aa';ctx.beginPath();ctx.arc(-22,-23,5,0,6.28);ctx.arc(21,-23,5,0,6.28);ctx.fill();
+ ctx.fillStyle='#302720';ctx.beginPath();ctx.arc(-10,-8,4,0,6.28);ctx.arc(11,-8,4,0,6.28);ctx.fill();ctx.fillStyle='#cb7464';ctx.beginPath();ctx.arc(1,2,4,0,6.28);ctx.fill();ctx.restore()
+}
+function drawObstacle(o){
+ const colors=['#b58a61','#d9a46d','#7eb6d8','#d57d6f'];ctx.fillStyle=colors[o.type%colors.length];rr(o.x,o.y,o.w,o.h,10,ctx.fillStyle);ctx.fillStyle='rgba(255,255,255,.25)';rr(o.x+8,o.y+8,o.w-16,10,5,ctx.fillStyle)
+}
+function drawMonster(m){
+ ctx.save();ctx.translate(m.x+m.w/2,m.y+m.h/2);ctx.fillStyle=m.kind===0?'#8e6fa5':m.kind===1?'#e58d6d':'#6fa5a1';ctx.beginPath();ctx.roundRect(-28,-22,56,44,15);ctx.fill();
+ ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(-10,-5,6,0,6.28);ctx.arc(10,-5,6,0,6.28);ctx.fill();ctx.fillStyle='#333';ctx.beginPath();ctx.arc(-10,-5,3,0,6.28);ctx.arc(10,-5,3,0,6.28);ctx.fill();
+ ctx.strokeStyle='#533';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,9,10,Math.PI*.1,Math.PI*.9);ctx.stroke();ctx.restore()
+}
+function drawCheese(c){
+ ctx.save();ctx.translate(c.x+c.w/2,c.y+c.h/2);const col=c.golden?'#ffe45e':'#ffd16b';ctx.fillStyle=col;ctx.beginPath();ctx.roundRect(-c.w/2,-c.h/2,c.w,c.h,14);ctx.fill();ctx.strokeStyle=c.golden?'#e2a91e':'#d79d33';ctx.lineWidth=3;ctx.stroke();
+ ctx.fillStyle='#d59d32';for(const [x,y,r] of [[-35,-8,6],[30,9,7],[8,-12,4]]){ctx.beginPath();ctx.arc(x,y,r,0,6.28);ctx.fill()}
+ ctx.fillStyle='#533f30';ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`900 ${c.word.length>11?16:19}px Arial`;ctx.fillText(c.word,0,1);ctx.restore()
+}
+function drawDoor(d){ctx.fillStyle='#f3d8a2';rr(d.x,d.y,d.w,d.h,12,'#f3d8a2');ctx.fillStyle='#9c6b45';rr(d.x+15,d.y+22,d.w-30,d.h-22,8,'#9c6b45');ctx.fillStyle='#ffd66f';ctx.beginPath();ctx.arc(d.x+d.w-23,d.y+d.h/2,6,0,6.28);ctx.fill()}
+function drawParticles(){for(const p of state.particles){ctx.globalAlpha=clamp(p.life,0,1);ctx.fillStyle=p.c;ctx.beginPath();ctx.arc(p.x,p.y,5,0,6.28);ctx.fill()}ctx.globalAlpha=1}
+function render(){ctx.clearRect(0,0,W,H);drawBg();for(const o of state.obstacles)drawObstacle(o);for(const m of state.monsters)drawMonster(m);for(const c of state.cheeses)drawCheese(c);if(state.door)drawDoor(state.door);drawHamster();drawParticles()}
+function loop(ts){const dt=Math.min(.033,(ts-state.last)/1000||0);state.last=ts;update(dt);render();requestAnimationFrame(loop)}
+window.addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();if(!e.repeat)startCharge()}});
+window.addEventListener('keyup',e=>{if(e.code==='Space'){e.preventDefault();releaseCharge()}});
+canvas.addEventListener('pointerdown',e=>{e.preventDefault();startCharge()});
+canvas.addEventListener('pointerup',e=>{e.preventDefault();releaseCharge()});
+canvas.addEventListener('pointercancel',()=>releaseCharge());
+document.getElementById('startBtn').onclick=startGame;
+document.getElementById('nextBtn').onclick=nextLevel;
+document.getElementById('againBtn').onclick=startGame;
+document.getElementById('resetBtn').onclick=()=>{if(state.running||overlay.style.display==='none')resetLevel()};
+document.getElementById('soundBtn').onclick=()=>{if(state.goldenTask)speak(state.goldenTask.word);else if(state.lastWord)speak(state.lastWord)};
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
